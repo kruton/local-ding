@@ -1,0 +1,13 @@
+#!/bin/sh
+
+set -eu
+
+base=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
+
+export PYTHONPATH="$base/tools${PYTHONPATH:+:$PYTHONPATH}"
+
+if [ "${1:-}" = patch ] && [ -z "${FAKEROOTKEY:-}" ]; then
+    exec fakeroot uv run --no-project --offline --no-cache --no-python-downloads --python python3 python -m local_ding_fw "$@"
+fi
+
+exec uv run --no-project --offline --no-cache --no-python-downloads --python python3 python -m local_ding_fw "$@"

@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Doorbell local settings</title>
+    <link rel="stylesheet" href="settings.css" />
+    <script src="settings.js" defer></script>
+  </head>
+  <body>
+    <main>
+      <h1>Doorbell local settings</h1>
+      <p>Configure local MQTT events and SSH access. Changes stay on this camera.</p>
+      <section>
+        <h2>Camera administrator</h2>
+        <p>
+          Your camera admin login is required for every read or change. The page does
+          not store it in browser storage.
+        </p>
+        <label
+          >Username<input
+            id="admin_user"
+            autocomplete="username"
+            value="admin" /></label
+        ><label
+          >Password<input
+            id="admin_password"
+            type="password"
+            autocomplete="current-password" /></label
+        ><button id="load">Load settings</button>
+      </section>
+      <section>
+        <h2>Time synchronization</h2>
+        <form id="time">
+          <label
+            >Mode<select id="time_mode">
+              <option value="auto">Automatic (DHCP)</option>
+              <option value="manual">Manual</option>
+            </select></label
+          ><label
+            >Private IPv4 servers, separated by spaces<input id="time_servers" /></label
+          ><button type="submit">Save time settings</button>
+        </form>
+        <p id="time_status">Time status is not loaded.</p>
+      </section>
+      <section>
+        <h2>MQTT events</h2>
+        <p>
+          Publishes the camera’s AI and doorbell states. MQTT uses plain TCP on your
+          private network; credentials are readable by root on this camera. The camera
+          login above is saved in the root-only configuration for local event reads.
+        </p>
+        <form id="mqtt">
+          <label
+            >Broker IPv4 address<input
+              id="broker_host"
+              required
+              placeholder="192.168.1.10" /></label
+          ><label
+            >Broker port<input
+              id="broker_port"
+              type="number"
+              min="1"
+              max="65535"
+              value="1883"
+              required /></label
+          ><label>Broker username<input id="broker_user" autocomplete="off" /></label
+          ><label
+            >Broker password<input
+              id="broker_password"
+              type="password"
+              autocomplete="new-password"
+              placeholder="Leave blank to keep the saved password" /></label
+          ><label
+            >Topic prefix<input
+              id="topic_prefix"
+              value="local-ding/frontdoor"
+              required /></label
+          ><label
+            >Client ID<input
+              id="client_id"
+              value="local-ding-frontdoor"
+              required /></label
+          ><label
+            >AI poll interval, milliseconds<input
+              id="poll_ms"
+              type="number"
+              min="250"
+              max="10000"
+              value="500"
+              required /></label
+          ><button type="submit">Save MQTT settings</button>
+        </form>
+        <p id="mqtt-status">MQTT settings have not been loaded.</p>
+        <p>
+          States are retained under <code>prefix/person/state</code>,
+          <code>package/state</code>, <code>vehicle/state</code>,
+          <code>animal/state</code>, <code>motion/state</code> and
+          <code>visitor/state</code>. Native button notifications publish a non-retained
+          <code>doorbell/ring</code> event. The interval controls AI polling; doorbell
+          events use a separate worker. Brief AI events can be missed. Check
+          <code>availability</code> before using retained states.
+        </p>
+      </section>
+      <section>
+        <h2>SSH public keys</h2>
+        <p>
+          SSH uses <code>root</code> on port <code>2222</code>. A key added here grants
+          root access. Existing keys are preserved; this page only adds keys.
+        </p>
+        <form id="ssh">
+          <label
+            >Ed25519 public key<textarea
+              id="public_key"
+              rows="4"
+              required
+              placeholder="ssh-ed25519 AAAA…"
+            ></textarea></label
+          ><button type="submit">Add SSH public key</button>
+        </form>
+        <h3>Authorized public keys</h3>
+        <pre id="keys">Load settings to view keys.</pre>
+      </section>
+      <p id="result" role="status" aria-live="polite"></p>
+    </main>
+  </body>
+</html>

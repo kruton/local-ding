@@ -1,0 +1,41 @@
+#!/bin/sh
+set -eu
+routes=/etc/local-only/blocked-v4
+case "${1:-install}" in
+  install)
+    rm -f /mnt/tmp/local-only.ready
+    while IFS= read -r network; do
+      [ -n "$network" ] || continue
+      ip route replace unreachable "$network" metric 32760
+    done < "$routes"
+    # An unexpected IPv6-enabled kernel must not silently evade this IPv4
+    # policy. This firmware's kernel has no IPv6 stack or modules.
+    [ ! -e /proc/net/if_inet6 ] || {
+      echo 'Local-only: IPv6 kernel requires an additional policy'
+      exit 1
+    }
+    : > /mnt/tmp/local-only.ready
+    ;;
+  check)
+    [ -f /mnt/tmp/local-only.ready ] || exit 1
+    temporary=/mnt/tmp/local-only-installed.$$
+    trap 'rm -f "$temporary"' EXIT HUP INT TERM
+    ip route show | awk '
+        $1 == "unreachable" {
+            if (index($2, "/") == 0) {
+                print $2 "/32"
+            } else {
+                print $2
+            }
+        }
+    ' > "$temporary"
+    while IFS= read -r network; do
+      [ -n "$network" ] || continue
+      grep -Fqx "$network" "$temporary" || exit 1
+    done < "$routes"
+    ;;
+  *)
+    echo 'Usage: local-ding-network install|check' >&2
+    exit 2
+    ;;
+esac

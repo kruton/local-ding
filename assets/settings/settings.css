@@ -1,0 +1,76 @@
+:root {
+  color-scheme: light dark;
+  font:
+    16px/1.5 system-ui,
+    sans-serif;
+}
+body {
+  margin: 0;
+  background: light-dark(#f3f5f7, #111820);
+  color: light-dark(#17212b, #e7edf3);
+}
+main {
+  max-width: 700px;
+  margin: auto;
+  padding: 24px 16px 60px;
+}
+h1 {
+  font-size: 1.9rem;
+}
+h2 {
+  font-size: 1.3rem;
+  margin-top: 0;
+}
+section {
+  background: light-dark(white, #1b2632);
+  border: 1px solid light-dark(#d4dce4, #354455);
+  border-radius: 12px;
+  padding: 22px;
+  margin: 22px 0;
+}
+label {
+  display: block;
+  margin: 14px 0;
+}
+input,
+textarea {
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
+  font: inherit;
+  padding: 10px;
+  margin-top: 5px;
+  border: 1px solid #8292a2;
+  border-radius: 6px;
+  background: light-dark(#fff, #111820);
+  color: inherit;
+}
+button {
+  padding: 11px 18px;
+  font: inherit;
+  cursor: pointer;
+  border: 0;
+  border-radius: 6px;
+  background: #1761aa;
+  color: white;
+}
+button:disabled {
+  opacity: 0.5;
+  cursor: wait;
+}
+pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 0.8rem;
+}
+code {
+  overflow-wrap: anywhere;
+}
+#result {
+  position: sticky;
+  bottom: 12px;
+  background: light-dark(#e4edf7, #263b50);
+  padding: 14px;
+  border-radius: 8px;
+  min-height: 24px;
+}

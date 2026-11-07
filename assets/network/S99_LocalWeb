@@ -1,0 +1,10 @@
+#!/bin/sh
+# Vendor service initialization can be skipped with cloud/P2P disabled.
+# Wait for normal startup, then provide a local-only web fallback.
+(
+  sleep 10
+  while :; do
+    /usr/sbin/local-ding-web ensure >> /mnt/tmp/local-web.log 2>&1
+    sleep 10
+  done
+) < /dev/null &

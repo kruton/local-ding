@@ -1,0 +1,68 @@
+#!/bin/sh
+set -eu
+umask 077
+assets=${LOCAL_WEB_ASSETS:-/etc/local-only/web}
+render() {
+  awk -v assets="$assets" -f "$assets/render-web.awk" /mnt/para/service.cfg
+}
+if [ "${1:-ensure}" = render ]; then
+  render
+  exit
+fi
+[ "${1:-ensure}" = ensure ] || exit 2
+[ -f /mnt/tmp/local-only.ready ] || exit 1
+mkdir /mnt/tmp/local-web.lock 2> /dev/null || exit 0
+trap 'rm -f /mnt/tmp/local-web.lock/nginx.conf; rmdir /mnt/tmp/local-web.lock' EXIT HUP INT TERM
+export LD_LIBRARY_PATH=/lib:/usr/lib:/mnt/app
+managed=/mnt/tmp/local-web.managed
+signature=/mnt/tmp/local-web.signature
+running=0
+pidof nginx > /dev/null 2>&1 && running=1
+# Yield to a normally started vendor nginx; manage only our fallback instance.
+if [ "$running" = 1 ] && [ ! -f "$managed" ]; then
+  # Keep vendor-generated ports/TLS settings; only add our HTTPS locations.
+  if [ -f /mnt/tmp/nginx.conf ] && ! grep -Fq '/local-settings/' /mnt/tmp/nginx.conf; then
+    awk -v routes="$assets/settings-locations.conf" '{print; if ($0 ~ /listen[[:space:]]+[^;]+[[:space:]]ssl;/) {while ((getline line < routes)>0) print line;close(routes)}}' /mnt/tmp/nginx.conf > /mnt/tmp/local-web.lock/nginx.conf
+    /mnt/app/nginx -t -c /mnt/tmp/local-web.lock/nginx.conf -p /mnt/tmp/
+    mv /mnt/tmp/local-web.lock/nginx.conf /mnt/tmp/nginx.conf
+    /mnt/app/nginx -s reload -c /mnt/tmp/nginx.conf -p /mnt/tmp/
+  fi
+  exit 0
+fi
+if [ "$running" = 1 ] && [ -s /mnt/tmp/run/nginx.pid ] && [ "$(cat /mnt/tmp/run/nginx.pid)" != "$(cat "$managed")" ]; then
+  previous=$(cat "$managed")
+  case "$previous" in '' | *[!0-9]*) exit 1 ;; esac
+  if [ -r "/proc/$previous/cmdline" ] && tr '\000' ' ' < "/proc/$previous/cmdline" | grep -Fq 'nginx: master process /mnt/app/nginx -c /mnt/tmp/nginx.conf'; then
+    kill -QUIT "$previous"
+  fi
+  rm -f "$managed" "$signature"
+  exit 0
+fi
+render > /mnt/tmp/local-web.lock/nginx.conf
+current=$(cksum < /mnt/tmp/local-web.lock/nginx.conf)
+if [ "$running" = 1 ] && [ -f "$signature" ] && [ "$current" = "$(cat "$signature")" ]; then
+  exit 0
+fi
+mkdir -p /mnt/tmp/run /mnt/tmp/logs
+cp /mnt/app/nginx_conf/conf/mime.types /mnt/tmp/mime.types
+cp /mnt/app/www/index.html.org /mnt/tmp/index.html
+/mnt/app/nginx -t -c /mnt/tmp/local-web.lock/nginx.conf -p /mnt/tmp/
+mv /mnt/tmp/local-web.lock/nginx.conf /mnt/tmp/nginx.conf
+if [ "$running" = 1 ]; then
+  /mnt/app/nginx -s reload -c /mnt/tmp/nginx.conf -p /mnt/tmp/
+else
+  /mnt/app/nginx -c /mnt/tmp/nginx.conf -p /mnt/tmp/
+fi
+attempt=0
+while :; do
+  pid=$(cat /mnt/tmp/run/nginx.pid 2> /dev/null || true)
+  case "$pid" in '' | *[!0-9]*) pid=0 ;; esac
+  if [ "$pid" != 0 ] && [ -r "/proc/$pid/cmdline" ] && tr '\000' ' ' < "/proc/$pid/cmdline" | grep -Fq 'nginx: master process /mnt/app/nginx -c /mnt/tmp/nginx.conf'; then
+    break
+  fi
+  attempt=$((attempt + 1))
+  [ "$attempt" -lt 6 ] || exit 1
+  sleep 1
+done
+cat /mnt/tmp/run/nginx.pid > "$managed"
+printf '%s\n' "$current" > "$signature"

@@ -1,0 +1,4 @@
+#!/bin/sh
+# Start SSH after app/para mounts without blocking camera startup.
+[ -f /mnt/tmp/local-only.ready ] || exit 1
+/usr/sbin/local-ding-ssh >> /mnt/tmp/dropbear-start.log 2>&1 < /dev/null &

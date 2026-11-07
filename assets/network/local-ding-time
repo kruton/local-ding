@@ -1,0 +1,129 @@
+#!/bin/sh
+set -eu
+set -f
+umask 077
+ram=${LOCAL_DING_TIME_RAM:-/mnt/tmp/local-ding-time}
+config=${LOCAL_DING_TIME_CONFIG:-/mnt/para/local-ding/time.json}
+defaults=${LOCAL_DING_TIME_DEFAULTS:-/etc/local-only/time.json}
+ntpd=${LOCAL_DING_NTPD:-/bin/busybox}
+reader=${LOCAL_DING_TIME_READER:-/mnt/app/local-ding-time-config}
+mkdir -p "$ram"
+valid() {
+  printf '%s\n' "$1" | awk '
+    {
+        for (i = 1; i <= NF; i++) {
+            value = $i
+            count_octets = split(value, octet, ".")
+            valid = (count_octets == 4)
+            for (j = 1; j <= count_octets; j++) {
+                if (octet[j] !~ /^[0-9]+$/ || length(octet[j]) > 3 ||
+                    octet[j] + 0 > 255 ||
+                    (length(octet[j]) > 1 && substr(octet[j], 1, 1) == "0")) {
+                    valid = 0
+                }
+            }
+            private = (octet[1] == 10 ||
+                (octet[1] == 172 && octet[2] >= 16 && octet[2] <= 31) ||
+                (octet[1] == 192 && octet[2] == 168))
+            if (valid && private && !seen[value] && count < 16) {
+                printf "%s%s", separator, value
+                separator = " "
+                seen[value] = 1
+                count++
+            }
+        }
+    }
+'
+}
+case "${1:-run}" in
+  dhcp)
+    case "${interface:-}" in
+      '' | .* | *[!a-zA-Z0-9_.:-]*)
+        exit 1
+        ;;
+    esac
+    if [ "${2:-}" = deconfig ]; then
+      rm -f "$ram/lease-$interface"
+    else
+      valid "${ntpsrv:-}" > "$ram/lease-$interface.tmp"
+      mv "$ram/lease-$interface.tmp" "$ram/lease-$interface"
+    fi
+    exit 0
+    ;;
+  sync)
+    case "${stratum:-16}" in 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 | 13 | 14 | 15)
+      read -r uptime rest < /proc/uptime
+      printf '{"stratum":%s,"uptime_seconds":%s}\n' "$stratum" "$uptime" > "$ram/sync.json.tmp"
+      mv "$ram/sync.json.tmp" "$ram/sync.json"
+      ;;
+    esac
+    exit 0
+    ;;
+  run) ;;
+  *) exit 2 ;;
+esac
+child=0
+cleanup() {
+  if [ "$child" -gt 0 ]; then
+    kill "$child" 2> /dev/null || true
+    wait "$child" 2> /dev/null || true
+  fi
+  rm -f "$ram/status.json"
+}
+trap cleanup EXIT
+trap 'exit 0' TERM INT HUP
+previous=none
+while :; do
+  selected=$defaults
+  [ ! -f "$config" ] || selected=$config
+  settings=$("$reader" "$selected" 2> /dev/null || printf 'auto\n')
+  mode=$(printf '%s\n' "$settings" | sed -n '1p')
+  manual_servers=$(printf '%s\n' "$settings" | sed -n '2p')
+  [ "$mode" = manual ] || mode=auto
+  iface=$(ip route show default | awk '
+        {
+            for (i = 1; i < NF; i++) {
+                if ($i == "dev") {
+                    print $(i + 1)
+                    exit
+                }
+            }
+        }
+    ')
+  case "$iface" in
+    '' | .* | *[!a-zA-Z0-9_.:-]*)
+      iface=none
+      ;;
+  esac
+  discovered=$(valid "$(cat "$ram/lease-$iface" 2> /dev/null || true)")
+  servers=$discovered
+  if [ "$mode" = manual ]; then
+    servers=$(valid "$manual_servers")
+  fi
+  signature="$mode:$servers"
+  alive=false
+  if [ "$child" -gt 0 ] && kill -0 "$child" 2> /dev/null; then
+    alive=true
+  fi
+  if [ "$signature" != "$previous" ] || { [ -n "$servers" ] && [ "$alive" = false ]; }; then
+    cleanup
+    child=0
+    rm -f "$ram/sync.json"
+    set --
+    for peer in $servers; do
+      set -- "$@" -p "$peer"
+    done
+    if [ "$#" -gt 0 ]; then
+      "$ntpd" ntpd -n -S /usr/sbin/local-ding-time-sync "$@" > /dev/null 2>&1 &
+      child=$!
+    fi
+    previous=$signature
+  fi
+  alive=false
+  if [ "$child" -gt 0 ] && kill -0 "$child" 2> /dev/null; then
+    alive=true
+  fi
+  printf '{"mode":"%s","servers":"%s","dhcp_servers":"%s","running":%s}\n' "$mode" "$servers" "$discovered" "$alive" > "$ram/status.json.tmp"
+  mv "$ram/status.json.tmp" "$ram/status.json"
+  sleep 2
+done

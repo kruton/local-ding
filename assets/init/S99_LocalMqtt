@@ -1,0 +1,34 @@
+#!/bin/sh
+# Opt-in: secrets are provisioned separately, never placed in the update image.
+config=/mnt/para/mqtt/events.json
+[ -f /mnt/tmp/local-only.ready ] || exit 1
+mkdir /mnt/tmp/event-mqtt.lock 2> /dev/null || exit 0
+(
+  child=0
+  trap '
+    if [ "$child" -gt 0 ]; then
+      kill "$child" 2> /dev/null
+      wait "$child" 2> /dev/null
+    fi
+    rm -f /mnt/tmp/event-mqtt.pid
+    rmdir /mnt/tmp/event-mqtt.lock
+  ' EXIT
+  trap 'exit 0' HUP INT TERM
+  sleep 12
+  while :; do
+    if [ ! -f "$config" ]; then
+      sleep 3
+      continue
+    fi
+    # Keep the RAM log bounded even during a prolonged broker outage.
+    if [ -f /mnt/tmp/event-mqtt.log ] && [ "$(wc -c < /mnt/tmp/event-mqtt.log)" -gt 16384 ]; then
+      mv /mnt/tmp/event-mqtt.log /mnt/tmp/event-mqtt.previous.log
+    fi
+    /mnt/app/local-ding-mqtt "$config" >> /mnt/tmp/event-mqtt.log 2>&1 &
+    child=$!
+    wait "$child"
+    child=0
+    sleep 10
+  done
+) < /dev/null &
+echo $! > /mnt/tmp/event-mqtt.pid

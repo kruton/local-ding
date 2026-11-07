@@ -1,0 +1,13 @@
+#!/bin/sh
+mkdir /mnt/tmp/local-ding-time.lock 2> /dev/null || exit 0
+(
+  trap 'rmdir /mnt/tmp/local-ding-time.lock 2>/dev/null || true' EXIT
+  child=0
+  trap 'kill "$child" 2>/dev/null || true;exit 0' TERM INT HUP
+  while :; do
+    /usr/sbin/local-ding-time run &
+    child=$!
+    wait "$child"
+    sleep 2
+  done
+) < /dev/null &

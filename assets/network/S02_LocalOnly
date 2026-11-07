@@ -1,0 +1,3 @@
+#!/bin/sh
+# S00 mounted app/para; this runs before network/app initialization.
+exec /usr/sbin/local-ding-network install >> /mnt/tmp/local-only.log 2>&1

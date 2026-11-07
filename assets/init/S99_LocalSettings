@@ -1,0 +1,24 @@
+#!/bin/sh
+[ -f /mnt/tmp/local-only.ready ] || exit 1
+mkdir /mnt/tmp/local-settings.lock 2> /dev/null || exit 0
+(
+  child=0
+  trap '
+    if [ "$child" -gt 0 ]; then
+      kill "$child" 2> /dev/null
+      wait "$child" 2> /dev/null
+    fi
+    rm -f /mnt/tmp/local-settings.pid
+    rmdir /mnt/tmp/local-settings.lock
+  ' EXIT
+  trap 'exit 0' HUP INT TERM
+  sleep 12
+  while :; do
+    /mnt/app/local-ding-settings < /dev/null > /mnt/tmp/local-settings.log 2>&1 &
+    child=$!
+    wait "$child"
+    child=0
+    sleep 10
+  done
+) < /dev/null &
+echo $! > /mnt/tmp/local-settings.pid

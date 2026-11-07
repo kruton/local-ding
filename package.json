@@ -1,0 +1,11 @@
+{
+  "devDependencies": {
+    "prettier": "3.9.10"
+  },
+  "name": "local-ding-assets",
+  "private": true,
+  "scripts": {
+    "format:assets": "prettier --write \"assets/settings/*.{html,css,js}\"",
+    "check:assets": "prettier --check \"assets/settings/*.{html,css,js}\""
+  }
+}

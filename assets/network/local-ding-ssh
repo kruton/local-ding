@@ -1,0 +1,66 @@
+#!/bin/sh
+# Public-key-only SSH with a persistent per-camera host identity.
+set -eu
+umask 077
+mkdir /mnt/tmp/dropbear-start.lock 2> /dev/null || exit 0
+child=0
+work=
+cleanup() {
+  if [ "$child" -gt 0 ]; then
+    kill "$child" 2> /dev/null || true
+    wait "$child" 2> /dev/null || true
+  fi
+  if [ -n "$work" ]; then
+    rm -f "$work/hostkey" "$work/hostkey.pub"
+    rmdir "$work"
+  fi
+  rmdir /mnt/tmp/dropbear-start.lock
+}
+trap cleanup EXIT
+trap 'exit 0' HUP INT TERM
+state=/mnt/para/dropbear
+hostkey=$state/dropbear_ed25519_host_key
+
+# Never store host secrets in an unmounted directory or follow state symlinks.
+awk '$2 == "/mnt/para" && $3 == "ubifs" { found = 1 } END { exit !found }' /proc/mounts || {
+  echo 'Dropbear: persistent para UBIFS is not mounted'
+  exit 1
+}
+[ ! -L "$state" ] || exit 1
+mkdir -p "$state"
+chown 0:0 "$state"
+chmod 700 "$state"
+for file in "$state/authorized_keys" "$hostkey"; do
+  [ ! -L "$file" ] || exit 1
+  if [ -e "$file" ]; then
+    [ -f "$file" ] || exit 1
+    chown 0:0 "$file"
+    chmod 600 "$file"
+  fi
+done
+
+# BusyBox lacks mktemp; mkdir creates an exclusive private workspace.
+if [ ! -s "$hostkey" ]; then
+  index=0
+  while ! mkdir "$state/.setup.$$.$index" 2> /dev/null; do
+    index=$((index + 1))
+    [ "$index" -le 100 ] || exit 1
+  done
+  work=$state/.setup.$$.$index
+  /mnt/app/dropbearkey -t ed25519 -f "$work/hostkey"
+  chmod 600 "$work/hostkey"
+  mv "$work/hostkey" "$hostkey"
+  sync
+  rm -f "$work/hostkey.pub"
+  rmdir "$work"
+  work=
+fi
+
+# S00 mounts devpts. Refuse an SSH service with broken terminal support.
+awk '$2 == "/dev/pts" && $3 == "devpts" { found = 1 } END { exit !found }' /proc/mounts || exit 1
+[ -c /dev/ptmx ] || exit 1
+# Bind before DHCP completes; keys added in the webpage apply on the next login.
+/mnt/app/dropbear -F -p 2222 -r "$hostkey" \
+  -P /mnt/tmp/dropbear.pid -K 30 -I 600 &
+child=$!
+wait "$child"
